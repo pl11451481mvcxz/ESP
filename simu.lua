@@ -12,7 +12,6 @@ local Camera = workspace.CurrentCamera
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
-local TweenService = game:GetService("TweenService")
 
 -- 创建主窗口
 local Window = Library:CreateWindow({
@@ -77,9 +76,11 @@ local function GetColor(colorName)
         return color
     end
     
+    -- 如果找不到颜色，返回白色作为默认值
     return Color3.fromRGB(255, 255, 255)
 end
 
+-- 特殊处理团队颜色的函数
 local function GetESPColor(colorName, player)
     if colorName == "团队" or colorName == "Team" then
         if player and player.Team then
@@ -491,153 +492,7 @@ player.CharacterAdded:Connect(function(char)
 end)
 
 -- ============================================================
--- 隐身系统（从 Yardtime Guards 提取）
--- ============================================================
-
-local InvisibilityEnabled = false
-local InvisibilityDepth = 6
-local InvisibilityConnection = nil
-local OriginalPosition = nil
-local CameraConnection = nil
-
-local function GetCharacter()
-    return LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-end
-
-local function GetRootPart()
-    local character = GetCharacter()
-    if not character then return nil end
-    return character:FindFirstChild("HumanoidRootPart")
-end
-
--- 开启隐身
-local function EnableInvisibility()
-    local character = GetCharacter()
-    local rootPart = GetRootPart()
-    
-    if not character or not rootPart then
-        Library:Notify("找不到角色！", 3)
-        return false
-    end
-    
-    -- 保存原始位置
-    OriginalPosition = rootPart.Position
-    
-    -- 尝试多种方法移动
-    local success = false
-    
-    -- 方法1：直接设置 CFrame
-    pcall(function()
-        rootPart.CFrame = CFrame.new(
-            rootPart.Position.X,
-            rootPart.Position.Y - InvisibilityDepth,
-            rootPart.Position.Z
-        )
-        success = true
-    end)
-    
-    -- 方法2：使用 Position
-    if not success then
-        pcall(function()
-            rootPart.Position = Vector3.new(
-                rootPart.Position.X,
-                rootPart.Position.Y - InvisibilityDepth,
-                rootPart.Position.Z
-            )
-            success = true
-        end)
-    end
-    
-    -- 方法3：使用 TweenService
-    if not success then
-        pcall(function()
-            local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Linear)
-            local targetCFrame = CFrame.new(
-                rootPart.Position.X,
-                rootPart.Position.Y - InvisibilityDepth,
-                rootPart.Position.Z
-            )
-            local tween = TweenService:Create(rootPart, tweenInfo, {CFrame = targetCFrame})
-            tween:Play()
-            success = true
-        end)
-    end
-    
-    -- 持续保持在地下
-    InvisibilityConnection = RunService.RenderStepped:Connect(function()
-        if not InvisibilityEnabled then return end
-        
-        local currentRoot = GetRootPart()
-        if currentRoot and OriginalPosition then
-            local targetY = OriginalPosition.Y - InvisibilityDepth
-            
-            -- 如果角色不在目标位置，强制移动
-            if math.abs(currentRoot.Position.Y - targetY) > 3 then
-                pcall(function()
-                    currentRoot.CFrame = CFrame.new(
-                        currentRoot.Position.X,
-                        targetY,
-                        currentRoot.Position.Z
-                    )
-                end)
-            end
-        end
-    end)
-    
-    -- 相机调整
-    CameraConnection = RunService.RenderStepped:Connect(function()
-        if not InvisibilityEnabled then return end
-        
-        if OriginalPosition then
-            local groundY = OriginalPosition.Y + 3
-            local cameraPos = Camera.CFrame.Position
-            
-            if math.abs(cameraPos.Y - groundY) > 1 then
-                Camera.CFrame = CFrame.new(cameraPos.X, groundY, cameraPos.Z) * 
-                    CFrame.Angles(Camera.CFrame.Rotation:ToEulerAnglesXYZ())
-            end
-        end
-    end)
-    
-    return success
-end
-
--- 关闭隐身
-local function DisableInvisibility()
-    InvisibilityEnabled = false
-    
-    if InvisibilityConnection then
-        InvisibilityConnection:Disconnect()
-        InvisibilityConnection = nil
-    end
-    
-    if CameraConnection then
-        CameraConnection:Disconnect()
-        CameraConnection = nil
-    end
-    
-    local rootPart = GetRootPart()
-    if rootPart and OriginalPosition then
-        pcall(function()
-            rootPart.CFrame = CFrame.new(OriginalPosition)
-        end)
-    end
-    
-    OriginalPosition = nil
-end
-
--- 角色重生时恢复隐身
-LocalPlayer.CharacterAdded:Connect(function(character)
-    task.wait(1)
-    if InvisibilityEnabled then
-        OriginalPosition = nil
-        task.wait(0.5)
-        EnableInvisibility()
-    end
-end)
-
--- ============================================================
--- ESP 透视功能
+-- ESP 透视功能（增强版）
 -- ============================================================
 
 local ESPEnabled = false
@@ -1115,14 +970,14 @@ for _, player in pairs(Players:GetPlayers()) do
             CreateESP(player)
         end)
     end
-end)
+end
 
 RunService.RenderStepped:Connect(function()
     UpdateESP()
 end)
 
 -- ============================================================
--- 自瞄功能
+-- 自瞄功能（增强版）
 -- ============================================================
 
 local AimbotEnabled = false
@@ -1767,7 +1622,7 @@ ESPGroup:AddDropdown('ESPTracerColor', {
 })
 
 ESPGroup:AddToggle('ESPBones', {
-    Text ='骨骰',
+    Text = '骨骰',
     Default = ESPConfig.Bones,
     Callback = function(Value)
         ESPConfig.Bones = Value
@@ -2336,44 +2191,8 @@ BasicGroup:AddToggle('BasicBulletTracking', {
     end
 })
 
--- 隐身功能
-BasicGroup:AddLabel("")
-
-BasicGroup:AddSlider('InvisibilityDepth', {
-    Text = '隐身深度',
-    Default = 6,
-    Min = 1,
-    Max = 30,
-    Rounding = 0,
-    Suffix = " Studs",
-    Callback = function(Value)
-        InvisibilityDepth = Value
-    end
-})
-
-BasicGroup:AddToggle('InvisibilityToggle', {
-    Text = '隐身（藏入地下）',
-    Default = false,
-    Callback = function(Value)
-        InvisibilityEnabled = Value
-        if Value then
-            local success = EnableInvisibility()
-            if success then
-                Library:Notify("隐身已开启！角色已藏入地下", 3)
-            else
-                Library:Notify("隐身开启失败！", 3)
-                InvisibilityEnabled = false
-            end
-        else
-            DisableInvisibility()
-            Library:Notify("隐身已关闭！角色已恢复", 3)
-        end
-    end
-})
-
 BasicGroup:AddLabel("警告：速度和跳跃高度可能被服务器检测")
 BasicGroup:AddLabel("飞行说明：点击按钮打开GUI，按飞行按钮开启，WASD移动，上升/下降按钮控制高度")
-BasicGroup:AddLabel("隐身说明：开启后将角色藏入地下，配合穿墙使用效果更好")
 
 -- ============================================================
 -- 自动朝向玩家
@@ -2485,7 +2304,3 @@ ThemeManager:ApplyToTab(Tabs.Settings)
 
 -- 通知脚本加载成功
 Library:Notify("脚本加载成功！", 3)
-
-
-
-
